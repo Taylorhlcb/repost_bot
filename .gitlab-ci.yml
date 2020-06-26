@@ -1,0 +1,7 @@
+LetsGO:
+    tags:
+      - deploy-to-prod
+    script:
+      - pwd
+      - cd auth_bot
+      - ./deploy.sh
