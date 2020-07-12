@@ -25,6 +25,8 @@ from pprint import pprint
 
 # Libs
 import requests
+from PIL import Image
+import imagehash
 
 # Own modules
 import config_manager
@@ -42,10 +44,12 @@ class repost_bot:
         self.chat_id = self.cfg.getint('bot_info_settings', 'chat_id')
         self.bot_name = self.cfg.get('bot_info_settings', 'bot_name')
         # Bot api settings #
-        self.update_string = "getUpdates?timeout={}&offset={}&limit={}".format(
-                self.cfg.getint('bot_api_settings', 'pipe_timeout'),
-                self.cfg.getint('bot_api_settings', 'pipe_offset'),
-                self.cfg.getint('bot_api_settings', 'pipe_limit'))
+        self.update_string = "getUpdates"
+        # self.update_string = "getUpdates?timeout={}&offset={}&limit={}".format(
+        #         self.cfg.getint('bot_api_settings', 'pipe_timeout'),
+        #         self.cfg.getint('bot_api_settings', 'pipe_offset'),
+        #         self.cfg.getint('bot_api_settings', 'pipe_limit'))
+        print(self.update_string)
         ### END of Config settings ###
         # self.dbname = "storage.sqlite"
         # self.conn = sqlite3.connect(self.config_manager_obj.config_manage_path + os.sep + self.dbname)
@@ -53,6 +57,7 @@ class repost_bot:
         self.update_string = self.url + self.update_string
         #What?
         self.management = list()
+        self.image_store = self.config_manager_obj.config_manage_path + "images" + os.sep + "images.json"
 
     # Simply fetch the json update list
     # https://core.telegram.org/bots/api#getupdates
@@ -201,19 +206,21 @@ class repost_bot:
         response = self.request_url_stream(address)
         print(response.content)
         image = json.loads(response.content)['result']
-        
         return image['file_path'], image['file_id']
 
-    def save_image_from_path(self, chat_id, file_path, file_id):
+    def compare_and_store_hash(self, chat_id, file_path, file_id, user):
         address = self.url + "{}".format(file_path)
         address = "https://api.telegram.org/file/bot{token}/{file_path}".format(token = self.bot_token, file_path = file_path)
         print("Request getFile in chat_id '{}', with file_id '{}'".format(chat_id, file_path))
         start_time = time()
         print(address)
-        response = self.request_url_stream(address)
-        with open("images" + os.sep + "{}.png".format(file_id), "wb") as f:
-            f.write(response.content)
-            f.close()
+        image_hash = imagehash.average_hash(self.request_url_stream(address).content)
+        images = json.load(open(self.image_store, 'r'))
+        if image_hash in images:
+            return True
+        else:
+            images[image_hash] = user
+            json.dump(images, open(self.image_store, 'w'), indent = 2)
         print("Response = {} Time = {}".format(response, time() - start_time))
 
     # Main loop for checking messages
@@ -230,11 +237,15 @@ class repost_bot:
                 self.management.append(message["update_id"])
                 key = list(message)[1]
                 message_chat_id = message[key]["chat"]["id"]
+                print(key)
+                print(message[key])
                 if 'photo' in message[key]:
                     for image in message[key]['photo']:
-                        print(image['file_id'])
+                        print(message[key])
                         file_path, file_id = self.get_image_from_chat(image['file_id'])
-                        self.save_image_from_path(message_chat_id, file_path, file_id)
+                        status = self.compare_and_store_hash(self.chat_id, file_path, file_id, self.take_message_return_username(message[key]['from']))
+                        if status:
+                            self.save_image_from_path(message_chat_id, file_path, file_id)
         # Make sure management list only contains current IDs
         self.management = id_list
 
@@ -261,7 +272,7 @@ class repost_bot:
     #     return(cur.fetchone())
 
 def run(runclass):
-    runclass.cache_ids_on_startup()
+    #runclass.cache_ids_on_startup()
     while True:
         runclass.chat_management()
         sleep(1)

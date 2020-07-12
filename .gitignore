@@ -12,7 +12,7 @@ auth_bot_config.ini
 nohup.out
 
 # Config
-*config*
+repost_bot_config*
 
 # Images
 images/*
