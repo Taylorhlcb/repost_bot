@@ -296,20 +296,6 @@ class repost_bot:
         if not exists:
             self.hash_dump(self.difference_hashes, data, self.difference_hash_file)
         return repost, username
-        # else:
-        #     self.average_hashes[average_hash] = {
-        #         "user":username,
-        #         "user_id":from_user['id'],
-        #         "chat_id":from_chat['id'],
-        #         "chat_name":from_chat['title'],
-        #         "date":from_chat['date'],
-        #         "update_id":update_id
-        #     }
-        # self.perceptive_hashes[
-        #     with open(self.average_store, 'w') as storage_file:
-        #         json.dump(self.average_hashes, storage_file, indent = 2)
-        #     return False, user
-        #print("Response = {} Time = {}".format(self.response, time() - start_time))
 
     # Main loop for checking messages
     def chat_management(self):
