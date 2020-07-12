@@ -44,11 +44,11 @@ class repost_bot:
         self.chat_id = self.cfg.getint('bot_info_settings', 'chat_id')
         self.bot_name = self.cfg.get('bot_info_settings', 'bot_name')
         # Bot api settings #
-        self.update_string = "getUpdates"
-        # self.update_string = "getUpdates?timeout={}&offset={}&limit={}".format(
-        #         self.cfg.getint('bot_api_settings', 'pipe_timeout'),
-        #         self.cfg.getint('bot_api_settings', 'pipe_offset'),
-        #         self.cfg.getint('bot_api_settings', 'pipe_limit'))
+        #self.update_string = "getUpdates"
+        self.update_string = "getUpdates?timeout={}&offset={}&limit={}".format(
+                self.cfg.getint('bot_api_settings', 'pipe_timeout'),
+                self.cfg.getint('bot_api_settings', 'pipe_offset'),
+                self.cfg.getint('bot_api_settings', 'pipe_limit'))
         print(self.update_string)
         ### END of Config settings ###
         # self.dbname = "storage.sqlite"
@@ -233,12 +233,13 @@ class repost_bot:
             # Keep track of current IDs
             id_list.append(message["update_id"])
             if message["update_id"] not in self.management:
+                print("test")
                 # Take message id and store it in a list
                 self.management.append(message["update_id"])
                 key = list(message)[1]
                 message_chat_id = message[key]["chat"]["id"]
-                print(key)
-                print(message[key])
+                #print(key)
+                #print(message[key])
                 if 'photo' in message[key]:
                     for image in message[key]['photo']:
                         print(message[key])
@@ -272,7 +273,7 @@ class repost_bot:
     #     return(cur.fetchone())
 
 def run(runclass):
-    #runclass.cache_ids_on_startup()
+    runclass.cache_ids_on_startup()
     while True:
         runclass.chat_management()
         sleep(1)
