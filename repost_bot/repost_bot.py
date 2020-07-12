@@ -17,6 +17,7 @@ import json
 import sqlite3
 import re as regex
 import os
+import io
 import sys
 import string
 from time import time, sleep
@@ -57,7 +58,11 @@ class repost_bot:
         self.update_string = self.url + self.update_string
         #What?
         self.management = list()
-        self.image_store = self.config_manager_obj.config_manage_path + "images" + os.sep + "images.json"
+        self.image_store = os.path.join(self.config_manager_obj.config_manage_path, "images", "images.json")
+        self.cached_hashes = {}
+        if (os.path.exists(self.image_store)):
+            with open(self.image_store) as cache_file:
+                self.cached_hashes = json.load(cache_file)
 
     # Simply fetch the json update list
     # https://core.telegram.org/bots/api#getupdates
@@ -201,30 +206,31 @@ class repost_bot:
 
     def get_image_from_chat(self, file_id):
         address = self.url + "getFile?file_id={}".format(file_id)
-        start_time = time()
         print(address)
         response = self.request_url_stream(address)
         print(response.content)
         image = json.loads(response.content)['result']
         return image['file_path'], image['file_id']
 
-    def compare_and_store_hash(self, chat_id, file_path, file_id, user):
+    def check_if_image_post_is_reposted(self, chat_id, file_path, file_id, user):
         address = self.url + "{}".format(file_path)
         address = "https://api.telegram.org/file/bot{token}/{file_path}".format(token = self.bot_token, file_path = file_path)
         print("Request getFile in chat_id '{}', with file_id '{}'".format(chat_id, file_path))
-        start_time = time()
         print(address)
-        image_hash = imagehash.average_hash(self.request_url_stream(address).content)
-        images = json.load(open(self.image_store, 'r'))
-        if image_hash in images:
-            return True
+        image = Image.open(io.BytesIO(self.request_url_stream(address).content))
+        image_hash = imagehash.average_hash(image)
+        marshal_freindly_hash = repr(image_hash)
+        if marshal_freindly_hash in self.cached_hashes:
+            return (True, self.cached_hashes[marshal_freindly_hash])
         else:
-            images[image_hash] = user
-            json.dump(images, open(self.image_store, 'w'), indent = 2)
-        print("Response = {} Time = {}".format(response, time() - start_time))
+            self.cached_hashes[marshal_freindly_hash] = user
+            with open(self.image_store, 'w') as cache_file:
+                json.dump(self.cached_hashes, cache_file, indent = 2)
+            return (False, None)
+        #print("Response = {} Time = {}".format(self.response, time() - start_time))
 
     # Main loop for checking messages
-    def chat_management(self):
+    def chat_management(self, catching_up_on_old_messages):
         # Fetch events from chat
         chat = self.get_Updates_return_json()
         id_list = []
@@ -243,9 +249,10 @@ class repost_bot:
                     for image in message[key]['photo']:
                         print(message[key])
                         file_path, file_id = self.get_image_from_chat(image['file_id'])
-                        status = self.compare_and_store_hash(self.chat_id, file_path, file_id, self.take_message_return_username(message[key]['from']))
-                        if status:
-                            self.save_image_from_path(message_chat_id, file_path, file_id)
+                        poster = self.take_message_return_username(message[key]['from'])
+                        reposted_image, original_poster = self.check_if_image_post_is_reposted(self.chat_id, file_path, file_id, poster)
+                        if reposted_image and not catching_up_on_old_messages:
+                            self.send_plain_text(message_chat_id, "OBJECTION! " + poster + ", you have reposted an image already posted by " + original_poster + ", you brain-addled scum! Repent or be punished!")
         # Make sure management list only contains current IDs
         self.management = id_list
 
@@ -273,8 +280,11 @@ class repost_bot:
 
 def run(runclass):
     #runclass.cache_ids_on_startup()
+    # Use catching_up_on_old_messages to only start yelling at people once we're reading new messages.
+    catching_up_on_old_messages = True
     while True:
-        runclass.chat_management()
+        runclass.chat_management(catching_up_on_old_messages)
+        catching_up_on_old_messages = False
         sleep(1)
 
 def main():
