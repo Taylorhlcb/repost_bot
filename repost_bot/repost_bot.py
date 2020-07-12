@@ -230,7 +230,7 @@ class repost_bot:
         #print("Response = {} Time = {}".format(self.response, time() - start_time))
 
     # Main loop for checking messages
-    def chat_management(self, catching_up_on_old_messages):
+    def chat_management(self):
         # Fetch events from chat
         chat = self.get_Updates_return_json()
         id_list = []
@@ -282,8 +282,7 @@ class repost_bot:
 def run(runclass):
     runclass.cache_ids_on_startup()
     while True:
-        runclass.chat_management(catching_up_on_old_messages)
-        catching_up_on_old_messages = False
+        runclass.chat_management()
         sleep(1)
 
 def main():
