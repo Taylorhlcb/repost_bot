@@ -60,7 +60,7 @@ class repost_bot:
         self.management = list()
         self.image_store = os.path.join(self.config_manager_obj.config_manage_path, "images", "images.json")
         self.cached_hashes = {}
-        if (os.path.exists(self.image_store)):
+        if (os.path.isfile(self.image_store)):
             with open(self.image_store) as cache_file:
                 self.cached_hashes = json.load(cache_file)
 
@@ -188,6 +188,14 @@ class repost_bot:
     def filter_Ascii(self, member_username):
         return list(filter(lambda x: x in set(string.printable), member_username))
 
+    def voice_lines(self):
+        voice_line_list = [
+            "OBJECTION",
+            "STOP RIGHT THERE CRIMINAL SCUM",
+            "UMMM HELLO?"
+        ]
+        return choice(voice_line_list)
+    
     def cache_ids_on_startup(self):
         chat = self.get_Updates_return_json()
         for message in chat:
@@ -212,21 +220,23 @@ class repost_bot:
         image = json.loads(response.content)['result']
         return image['file_path'], image['file_id']
 
-    def check_if_image_post_is_reposted(self, chat_id, file_path, file_id, user):
+    def check_if_image_post_is_reposted(self, chat_id, update_id, file_path, file_id, user):
         address = self.url + "{}".format(file_path)
         address = "https://api.telegram.org/file/bot{token}/{file_path}".format(token = self.bot_token, file_path = file_path)
         print("Request getFile in chat_id '{}', with file_id '{}'".format(chat_id, file_path))
         print(address)
         image = Image.open(io.BytesIO(self.request_url_stream(address).content))
-        image_hash = imagehash.average_hash(image)
-        marshal_freindly_hash = repr(image_hash)
-        if marshal_freindly_hash in self.cached_hashes:
-            return (True, self.cached_hashes[marshal_freindly_hash])
+        image_hash = str(imagehash.average_hash(image))
+        if image_hash in self.cached_hashes:
+            return True, user
         else:
-            self.cached_hashes[marshal_freindly_hash] = user
+            self.cached_hashes[image_hash] = {
+                "user":user,
+                "update_id":update_id
+            }
             with open(self.image_store, 'w') as cache_file:
                 json.dump(self.cached_hashes, cache_file, indent = 2)
-            return (False, None)
+            return False, user
         #print("Response = {} Time = {}".format(self.response, time() - start_time))
 
     # Main loop for checking messages
@@ -239,21 +249,21 @@ class repost_bot:
             # Keep track of current IDs
             id_list.append(message["update_id"])
             if message["update_id"] not in self.management:
-                print("test")
                 # Take message id and store it in a list
                 self.management.append(message["update_id"])
                 key = list(message)[1]
                 message_chat_id = message[key]["chat"]["id"]
-                #print(key)
-                #print(message[key])
+                print("New message:", message["update_id"])
+                print("Type:", key)
+                print(message[key])
                 if 'photo' in message[key]:
-                    for image in message[key]['photo']:
-                        print(message[key])
-                        file_path, file_id = self.get_image_from_chat(image['file_id'])
-                        poster = self.take_message_return_username(message[key]['from'])
-                        reposted_image, original_poster = self.check_if_image_post_is_reposted(self.chat_id, file_path, file_id, poster)
-                        if reposted_image and not catching_up_on_old_messages:
-                            self.send_plain_text(message_chat_id, "OBJECTION! " + poster + ", you have reposted an image already posted by " + original_poster + ", you brain-addled scum! Repent or be punished!")
+                    image = message[key]['photo'][len(message[key]['photo']) - 1]
+                    file_path, file_id = self.get_image_from_chat(image['file_id'])
+                    poster = self.take_message_return_username(message[key]['from'])
+                    is_repost, original_poster = self.check_if_image_post_is_reposted(self.chat_id, message["update_id"], file_path, file_id, poster)
+                    if is_repost:
+                        self.send_plain_text(message_chat_id, "{voice_line}! {poster}, you have reposted an image already posted by {original_poster}, you brain-addled scum! Repent or be punished!"\
+                            .format(voice_line = self.voice_lines(), poster = poster, original_poster = original_poster))
         # Make sure management list only contains current IDs
         self.management = id_list
 
