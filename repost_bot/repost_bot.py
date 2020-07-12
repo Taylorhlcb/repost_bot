@@ -58,11 +58,30 @@ class repost_bot:
         self.update_string = self.url + self.update_string
         #What?
         self.management = list()
-        self.image_store = os.path.join(self.config_manager_obj.config_manage_path, "images", "images.json")
-        self.cached_hashes = {}
-        if (os.path.isfile(self.image_store)):
-            with open(self.image_store) as cache_file:
-                self.cached_hashes = json.load(cache_file)
+        self.storage_path = os.path.join(self.config_manager_obj.config_manage_path, "images")
+        #average_hashes
+        self.average_hash_file = os.path.join(self.storage_path, "average_hashes.json")
+        self.average_hashes = self.open_storage(self.average_hash_file)
+        #differance_hashes
+        self.difference_hash_file = os.path.join(self.storage_path, "difference_hashes.json")
+        self.difference_hashes = self.open_storage(self.difference_hash_file)
+        #wavelet_hashes
+        self.wavelet_hash_file = os.path.join(self.storage_path, "wavelet_hashes.json")
+        self.wavelet_hashes = self.open_storage(self.wavelet_hash_file)
+        #perceptive_hashes
+        self.perceptive_hash_file =  os.path.join(self.storage_path, "perceptive_hashes.json")
+        self.perceptive_hashes = self.open_storage(self.perceptive_hash_file)
+
+    def open_storage(self, path):
+        if (os.path.isfile(path)):
+            with open(path) as storage_file:
+                hash_dict = json.load(storage_file)
+        else:
+            print("Failed to find {}".format(path))
+            with open(path, 'w') as storage_file:
+                storage_file.writelines("{}")
+            hash_dict = {}
+        return hash_dict
 
     # Simply fetch the json update list
     # https://core.telegram.org/bots/api#getupdates
@@ -219,24 +238,77 @@ class repost_bot:
         print(response.content)
         image = json.loads(response.content)['result']
         return image['file_path'], image['file_id']
+    
+    def hash_compare(self, hash_string, hashes):
+        if hash_string in hashes:
+            return True, hashes[hash_string]['username']
+        else:
+            return False, None
 
-    def check_if_image_post_is_reposted(self, chat_id, update_id, file_path, file_id, user):
+    def hash_dump(self, hash_dict, data, hash_file):
+        hash_dict[data['hash_string']] = {
+            "username":data['username'],
+            "user_id":data['user_id'],
+            "chat_id":data['chat_id'],
+            "chat_name":data['chat_name'],
+            "date":data['date'],
+            "update_id":data['update_id']
+        }
+        with open(hash_file, 'w') as storage_file:
+            json.dump(hash_dict, storage_file, indent = 2)
+    
+    def check_if_image_post_is_reposted(self, chat_id, username, user_dict, chat_dict, date, update_id, file_path, file_id):
         address = self.url + "{}".format(file_path)
         address = "https://api.telegram.org/file/bot{token}/{file_path}".format(token = self.bot_token, file_path = file_path)
         print("Request getFile in chat_id '{}', with file_id '{}'".format(chat_id, file_path))
         print(address)
+        data = {
+            "hash_string":"",
+            "username":username,
+            "user_id":user_dict['id'],
+            "chat_id":chat_dict['id'],
+            "chat_name":chat_dict['title'],
+            "date":date,
+            "update_id":update_id
+        }
         image = Image.open(io.BytesIO(self.request_url_stream(address).content))
-        image_hash = str(imagehash.average_hash(image))
-        if image_hash in self.cached_hashes:
-            return True, user
+        repost = False
+        ## Average hash
+        data['hash_string'] = str(imagehash.average_hash(image))
+        exists, username = self.hash_compare(hash_string = data['hash_string'], hashes = self.average_hashes)
+        if not exists:
+            self.hash_dump(self.average_hashes, data, self.average_hash_file)
         else:
-            self.cached_hashes[image_hash] = {
-                "user":user,
-                "update_id":update_id
-            }
-            with open(self.image_store, 'w') as cache_file:
-                json.dump(self.cached_hashes, cache_file, indent = 2)
-            return False, user
+            repost = True
+        ## Perceptive hash
+        data['hash_string'] = str(imagehash.phash(image))
+        exists, username = self.hash_compare(hash_string = data['hash_string'], hashes = self.perceptive_hashes)
+        if not exists:
+            self.hash_dump(self.perceptive_hashes, data, self.perceptive_hash_file)
+        ## Wavelet hash
+        data['hash_string'] = str(imagehash.whash(image))
+        exists, username = self.hash_compare(hash_string = data['hash_string'], hashes = self.wavelet_hashes)
+        if not exists:
+            self.hash_dump(self.wavelet_hashes, data, self.wavelet_hash_file)
+        ## Difference hash
+        data['hash_string'] = str(imagehash.dhash(image))
+        exists, username = self.hash_compare(hash_string = data['hash_string'], hashes = self.difference_hashes)
+        if not exists:
+            self.hash_dump(self.difference_hashes, data, self.difference_hash_file)
+        return repost, username
+        # else:
+        #     self.average_hashes[average_hash] = {
+        #         "user":username,
+        #         "user_id":from_user['id'],
+        #         "chat_id":from_chat['id'],
+        #         "chat_name":from_chat['title'],
+        #         "date":from_chat['date'],
+        #         "update_id":update_id
+        #     }
+        # self.perceptive_hashes[
+        #     with open(self.average_store, 'w') as storage_file:
+        #         json.dump(self.average_hashes, storage_file, indent = 2)
+        #     return False, user
         #print("Response = {} Time = {}".format(self.response, time() - start_time))
 
     # Main loop for checking messages
@@ -259,11 +331,11 @@ class repost_bot:
                 if 'photo' in message[key]:
                     image = message[key]['photo'][len(message[key]['photo']) - 1]
                     file_path, file_id = self.get_image_from_chat(image['file_id'])
-                    poster = self.take_message_return_username(message[key]['from'])
-                    is_repost, original_poster = self.check_if_image_post_is_reposted(self.chat_id, message["update_id"], file_path, file_id, poster)
+                    username = self.take_message_return_username(message[key]['from'])
+                    is_repost, original_poster = self.check_if_image_post_is_reposted(message_chat_id, username, message[key]['from'], message[key]['chat'], message[key]['date'], message["update_id"], file_path, file_id)
                     if is_repost:
-                        self.send_plain_text(message_chat_id, "{voice_line}! {poster}, you have reposted an image already posted by {original_poster}, you brain-addled scum! Repent or be punished!"\
-                            .format(voice_line = self.voice_lines(), poster = poster, original_poster = original_poster))
+                        self.send_plain_text(message_chat_id, "{voice_line}! {username}, you have reposted an image already posted by {original_poster}, you brain-addled scum! Repent or be punished!"\
+                            .format(voice_line = self.voice_lines(), username = username, original_poster = original_poster))
         # Make sure management list only contains current IDs
         self.management = id_list
 

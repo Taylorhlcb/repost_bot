@@ -11,6 +11,9 @@ auth_bot_config.ini
 # Logging
 nohup.out
 
+# Hashes
+*_hash.json
+
 # Config
 repost_bot_config*
 
