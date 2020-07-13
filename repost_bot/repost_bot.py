@@ -23,6 +23,7 @@ import string
 from time import time, sleep
 from random import choice
 from pprint import pprint
+from datetime import datetime
 
 # Libs
 import requests
@@ -239,12 +240,21 @@ class repost_bot:
         image = json.loads(response.content)['result']
         return image['file_path'], image['file_id']
     
-    def hash_compare(self, hash_string, hashes):
+    def hash_compare(self, hash_string, hashes, hash_type, response):
+        response[hash_type] = {}
         if hash_string in hashes:
-            return True, hashes[hash_string]['username']
+            response[hash_type]['exists'] = True
+            response[hash_type]['username'] = hashes[hash_string]['username']
+            response[hash_type]["user_id"] = hashes[hash_string]['user_id']
+            response[hash_type]["chat_id"] = hashes[hash_string]['chat_id']
+            response[hash_type]["chat_name"] = hashes[hash_string]['chat_name']
+            response[hash_type]["date"] = hashes[hash_string]['date']
+            response[hash_type]["update_id"] = hashes[hash_string]['update_id']
+            return response
         else:
-            return False, None
-
+            response[hash_type]['exists'] = False
+            return response
+    
     def hash_dump(self, hash_dict, data, hash_file):
         hash_dict[data['hash_string']] = {
             "username":data['username'],
@@ -273,29 +283,43 @@ class repost_bot:
         }
         image = Image.open(io.BytesIO(self.request_url_stream(address).content))
         repost = False
+        ## Report
+        report = {}
+        response = {}
+
         ## Average hash
         data['hash_string'] = str(imagehash.average_hash(image))
-        exists, username = self.hash_compare(hash_string = data['hash_string'], hashes = self.average_hashes)
-        if not exists:
+        response = self.hash_compare(hash_string = data['hash_string'], hashes = self.average_hashes, hash_type = 'average_hash', response = response)
+        if not response['average_hash']['exists']:
             self.hash_dump(self.average_hashes, data, self.average_hash_file)
         else:
             repost = True
+        report['average_hash'] = response['average_hash']['exists']
+
         ## Perceptive hash
         data['hash_string'] = str(imagehash.phash(image))
-        exists, username = self.hash_compare(hash_string = data['hash_string'], hashes = self.perceptive_hashes)
-        if not exists:
+        response = self.hash_compare(hash_string = data['hash_string'], hashes = self.perceptive_hashes, hash_type = 'perceptive_hash', response = response)
+        if not response['perceptive_hash']['exists']:
             self.hash_dump(self.perceptive_hashes, data, self.perceptive_hash_file)
+        report['perceptive_hash'] = response['perceptive_hash']['exists']
+
         ## Wavelet hash
         data['hash_string'] = str(imagehash.whash(image))
-        exists, username = self.hash_compare(hash_string = data['hash_string'], hashes = self.wavelet_hashes)
-        if not exists:
+        response = self.hash_compare(hash_string = data['hash_string'], hashes = self.wavelet_hashes, hash_type = 'wavelet_hash', response = response)
+        if not response['wavelet_hash']['exists']:
             self.hash_dump(self.wavelet_hashes, data, self.wavelet_hash_file)
+        report['wavelet_hash'] = response['wavelet_hash']['exists']
+
         ## Difference hash
         data['hash_string'] = str(imagehash.dhash(image))
-        exists, username = self.hash_compare(hash_string = data['hash_string'], hashes = self.difference_hashes)
-        if not exists:
+        response = self.hash_compare(hash_string = data['hash_string'], hashes = self.difference_hashes, hash_type = 'difference_hash', response = response)
+        if not response['difference_hash']['exists']:
             self.hash_dump(self.difference_hashes, data, self.difference_hash_file)
-        return repost, username
+        report['difference_hash'] = response['difference_hash']['exists']
+
+        print("Report for post#{}:".format(update_id))
+        pprint(report)
+        return response
 
     # Main loop for checking messages
     def chat_management(self):
@@ -313,15 +337,24 @@ class repost_bot:
                 message_chat_id = message[key]["chat"]["id"]
                 print("New message:", message["update_id"])
                 print("Type:", key)
-                print(message[key])
-                if 'photo' in message[key]:
+                pprint(message[key])
+                if message_chat_id == self.chat_id and 'photo' in message[key]:
                     image = message[key]['photo'][len(message[key]['photo']) - 1]
                     file_path, file_id = self.get_image_from_chat(image['file_id'])
                     username = self.take_message_return_username(message[key]['from'])
-                    is_repost, original_poster = self.check_if_image_post_is_reposted(message_chat_id, username, message[key]['from'], message[key]['chat'], message[key]['date'], message["update_id"], file_path, file_id)
-                    if is_repost:
-                        self.send_plain_text(message_chat_id, "{voice_line}! {username}, you have reposted an image already posted by {original_poster}, you brain-addled scum! Repent or be punished!"\
-                            .format(voice_line = self.voice_lines(), username = username, original_poster = original_poster))
+                    response = self.check_if_image_post_is_reposted(message_chat_id, username, message[key]['from'], message[key]['chat'], message[key]['date'], message["update_id"], file_path, file_id)
+                    if response['average_hash']['exists']:
+                        date_calc = str(datetime.utcfromtimestamp(message[key]['date']) - datetime.utcfromtimestamp(response['average_hash']['date']))
+                        if "days" not in date_calc:
+                            date_calc = "0 days, " + date_calc
+                        print(date_calc)
+                        self.send_plain_text(message_chat_id, "{voice_line}! {username}, you have reposted an image already posted by {original_poster}, you brain-addled scum! Repent or be punished!\nTime since post: {date}"\
+                            .format(voice_line = self.voice_lines(), 
+                                    username = username,
+                                    original_poster = response['average_hash']['username'],
+                                    date = date_calc
+                            )
+                        )
         # Make sure management list only contains current IDs
         self.management = id_list
 
