@@ -351,7 +351,6 @@ class repost_bot:
                 print("New message:", message["update_id"])
                 print("Type:", key)
                 pprint(message[key])
-                print(self.chat_id)
                 if message_chat_id == self.chat_id and 'photo' in message[key]:
                     image = message[key]['photo'][len(message[key]['photo']) - 1]
                     file_path, file_id = self.get_image_from_chat(image['file_id'])
