@@ -164,6 +164,14 @@ class repost_bot:
             return(err)
 
     # https://core.telegram.org/bots/api#sendmessage
+    def send_reply(self, chat_id, msg_id, plain_text, markup = '', disable_web_page_preview = ''):
+        address = self.url + "sendMessage?reply_to_message_id={}&chat_id={}&text={}{}{}".format(msg_id, chat_id, urllib.parse.quote_plus(plain_text), markup, disable_web_page_preview)
+        print("Request send_plain_text in chat_id '{}', with text '{}'".format(chat_id, plain_text))
+        start_time = time()
+        response = self.request_url(address)
+        print("Response = {} Time = {}".format(response, time() - start_time))
+
+    # https://core.telegram.org/bots/api#sendmessage
     def send_plain_text(self, chat_id, plain_text, markup = '', disable_web_page_preview = ''):
         address = self.url + "sendMessage?chat_id={}&text={}{}{}".format(chat_id, urllib.parse.quote_plus(plain_text), markup, disable_web_page_preview)
         print("Request send_plain_text in chat_id '{}', with text '{}'".format(chat_id, plain_text))
@@ -243,13 +251,15 @@ class repost_bot:
     def hash_compare(self, hash_string, hashes, hash_type, response):
         response[hash_type] = {}
         if hash_string in hashes:
+            matched_hash=hashes[hash_string]
             response[hash_type]['exists'] = True
-            response[hash_type]['username'] = hashes[hash_string]['username']
-            response[hash_type]["user_id"] = hashes[hash_string]['user_id']
-            response[hash_type]["chat_id"] = hashes[hash_string]['chat_id']
-            response[hash_type]["chat_name"] = hashes[hash_string]['chat_name']
-            response[hash_type]["date"] = hashes[hash_string]['date']
-            response[hash_type]["update_id"] = hashes[hash_string]['update_id']
+            response[hash_type]['username'] = matched_hash['username']
+            response[hash_type]["user_id"] = matched_hash['user_id']
+            response[hash_type]["chat_id"] = matched_hash['chat_id']
+            response[hash_type]["chat_name"] = matched_hash['chat_name']
+            response[hash_type]["date"] = matched_hash['date']
+            response[hash_type]["update_id"] = matched_hash['update_id']
+            response[hash_type]["message_id"] = matched_hash['message_id']
             return response
         else:
             response[hash_type]['exists'] = False
@@ -262,12 +272,13 @@ class repost_bot:
             "chat_id":data['chat_id'],
             "chat_name":data['chat_name'],
             "date":data['date'],
-            "update_id":data['update_id']
+            "update_id":data['update_id'],
+            "message_id":data['message_id']
         }
         with open(hash_file, 'w') as storage_file:
             json.dump(hash_dict, storage_file, indent = 2)
     
-    def check_if_image_post_is_reposted(self, chat_id, username, user_dict, chat_dict, date, update_id, file_path, file_id):
+    def check_if_image_post_is_reposted(self, chat_id, username, user_dict, chat_dict, date, update_id, file_path, file_id, message_id):
         address = self.url + "{}".format(file_path)
         address = "https://api.telegram.org/file/bot{token}/{file_path}".format(token = self.bot_token, file_path = file_path)
         print("Request getFile in chat_id '{}', with file_id '{}'".format(chat_id, file_path))
@@ -278,6 +289,7 @@ class repost_bot:
             "user_id":user_dict['id'],
             "chat_id":chat_dict['id'],
             "chat_name":chat_dict['title'],
+            "message_id":message_id,
             "date":date,
             "update_id":update_id
         }
@@ -324,6 +336,7 @@ class repost_bot:
     # Main loop for checking messages
     def chat_management(self):
         # Fetch events from chat
+        print("running")
         chat = self.get_Updates_return_json()
         id_list = []
         # Process messages
@@ -338,17 +351,29 @@ class repost_bot:
                 print("New message:", message["update_id"])
                 print("Type:", key)
                 pprint(message[key])
+                print(self.chat_id)
                 if message_chat_id == self.chat_id and 'photo' in message[key]:
                     image = message[key]['photo'][len(message[key]['photo']) - 1]
                     file_path, file_id = self.get_image_from_chat(image['file_id'])
                     username = self.take_message_return_username(message[key]['from'])
-                    response = self.check_if_image_post_is_reposted(message_chat_id, username, message[key]['from'], message[key]['chat'], message[key]['date'], message["update_id"], file_path, file_id)
-                    if response['average_hash']['exists']:
+                    message_id = message[key]['message_id']
+                    response = self.check_if_image_post_is_reposted(message_chat_id,\
+                        username,\
+                        message[key]['from'],\
+                        message[key]['chat'],\
+                        message[key]['date'],\
+                        message["update_id"],\
+                        file_path,\
+                        file_id,\
+                        message_id)
+                    if response['average_hash']['exists'] or response['wavelet_hash']['exists']:
                         date_calc = str(datetime.utcfromtimestamp(message[key]['date']) - datetime.utcfromtimestamp(response['average_hash']['date']))
                         if "days" not in date_calc:
                             date_calc = "0 days, " + date_calc
                         print(date_calc)
-                        self.send_plain_text(message_chat_id, "{voice_line}! {username}, you have reposted an image already posted by {original_poster}, you brain-addled scum! Repent or be punished!\nTime since post: {date}"\
+                        message_id_of_first_post = response['average_hash']['message_id']
+                        self.send_reply(message_chat_id, message_id_of_first_post,
+                             "{voice_line}! {username}, you have reposted an image already posted here by {original_poster}, you brain-addled scum! Repent or be punished!\nTime since post: {date}"\
                             .format(voice_line = self.voice_lines(), 
                                     username = username,
                                     original_poster = response['average_hash']['username'],
