@@ -212,7 +212,8 @@ class repost_bot:
         voice_line_list = [
             "OBJECTION",
             "STOP RIGHT THERE CRIMINAL SCUM",
-            "UMMM HELLO?"
+            "UMMM HELLO?",
+            "U FUKIN WOT M8?"
         ]
         return choice(voice_line_list)
     
@@ -343,7 +344,7 @@ class repost_bot:
                     file_path, file_id = self.get_image_from_chat(image['file_id'])
                     username = self.take_message_return_username(message[key]['from'])
                     response = self.check_if_image_post_is_reposted(message_chat_id, username, message[key]['from'], message[key]['chat'], message[key]['date'], message["update_id"], file_path, file_id)
-                    if response['average_hash']['exists']:
+                    if response['average_hash']['exists'] and message[key]['from']['id'] != response['average_hash']['user_id']:
                         date_calc = str(datetime.utcfromtimestamp(message[key]['date']) - datetime.utcfromtimestamp(response['average_hash']['date']))
                         if "days" not in date_calc:
                             date_calc = "0 days, " + date_calc
