@@ -366,7 +366,7 @@ class repost_bot:
                         file_path,\
                         file_id,\
                         message_id)
-                    if response['average_hash']['exists'] or response['wavelet_hash']['exists']:
+                    if response['average_hash']['exists']:
                         date_calc = str(datetime.utcfromtimestamp(message[key]['date']) - datetime.utcfromtimestamp(response['average_hash']['date']))
                         if "days" not in date_calc:
                             date_calc = "0 days, " + date_calc
