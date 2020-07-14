@@ -336,7 +336,6 @@ class repost_bot:
     # Main loop for checking messages
     def chat_management(self):
         # Fetch events from chat
-        print("running")
         chat = self.get_Updates_return_json()
         id_list = []
         # Process messages
